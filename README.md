@@ -1,6 +1,6 @@
-#Influential users
+# Influential users
 
-##Description
+## Description
 Determining the most influential users from the multimedia social network YouTube by creating a graph with the most important users / channels.
 
 ![Influential users image](https://www.researchgate.net/profile/Yujie_Fan5/publication/320885176/figure/fig10/AS:557869974392832@1510017974405/Identification-of-the-influential-users_W640.jpg)
@@ -21,7 +21,6 @@ The main components of the application are
     1. sentiment detection
 		
 ## Application structure
----
 ```
 influential_users
 ├── youtube_sentiment_analysis
