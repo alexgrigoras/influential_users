@@ -147,13 +147,16 @@ class YoutubeAPI:
         try:
             results = self.__auth_service.search().list(**kwargs).execute()
         except HttpError:
-            print("HTTP error - invalid filter parameter")
+            print("HTTP error")
         while results and index < nr_pages:
             final_results.extend(results['items'])
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                results = self.__auth_service.search().list(**kwargs).execute()
-                index += 1
+                try:
+                    results = self.__auth_service.search().list(**kwargs).execute()
+                    index += 1
+                except HttpError:
+                    print("HTTP error")
             else:
                 break
 
@@ -166,7 +169,7 @@ class YoutubeAPI:
         try:
             results = self.__auth_service.channels().list(**kwargs).execute()
         except HttpError:
-            print("HTTP error - invalid filter parameter")
+            print("HTTP error")
         while results:
             for item in results['items']:
                 details = {
@@ -180,7 +183,10 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                results = self.__auth_service.channels().list(**kwargs).execute()
+                try:
+                    results = self.__auth_service.channels().list(**kwargs).execute()
+                except HttpError:
+                    print("HTTP error")
             else:
                 break
 
@@ -193,7 +199,7 @@ class YoutubeAPI:
         try:
             results = self.__auth_service.playlists().list(**kwargs).execute()
         except HttpError:
-            print("HTTP error - invalid filter parameter")
+            print("HTTP error")
         while results:
             for item in results['items']:
                 details = {
@@ -205,7 +211,10 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                results = self.__auth_service.playlists().list(**kwargs).execute()
+                try:
+                    results = self.__auth_service.playlists().list(**kwargs).execute()
+                except HttpError:
+                    print("HTTP error")
             else:
                 break
 
@@ -218,7 +227,7 @@ class YoutubeAPI:
         try:
             results = self.__auth_service.playlistItems().list(**kwargs).execute()
         except HttpError:
-            print("HTTP error - invalid filter parameter")
+            print("HTTP error")
         while results:
             for item in results['items']:
                 details = {
@@ -232,7 +241,10 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                results = self.__auth_service.playlistItems().list(**kwargs).execute()
+                try:
+                    results = self.__auth_service.playlistItems().list(**kwargs).execute()
+                except HttpError:
+                    print("HTTP error")
             else:
                 break
 
@@ -245,7 +257,7 @@ class YoutubeAPI:
         try:
             results = self.__auth_service.videos().list(**kwargs).execute()
         except HttpError:
-            print("HTTP error - invalid filter parameter")
+            print("HTTP error")
         while results:
             for item in results['items']:
                 details = {
@@ -260,7 +272,10 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                results = self.__auth_service.videos().list(**kwargs).execute()
+                try:
+                    results = self.__auth_service.videos().list(**kwargs).execute()
+                except HttpError:
+                    print("HTTP error")
             else:
                 break
 
@@ -271,7 +286,7 @@ class YoutubeAPI:
         try:
             results = self.__auth_service.commentThreads().list(**kwargs).execute()
         except HttpError:
-            print("Cannot download comments!")
+            print("HTTP error")
             results = []
 
         nr_pages = 10
@@ -301,8 +316,11 @@ class YoutubeAPI:
                         })
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                results = self.__auth_service.commentThreads().list(**kwargs).execute()
-                index += 1
+                try:
+                    results = self.__auth_service.commentThreads().list(**kwargs).execute()
+                    index += 1
+                except HttpError:
+                    print("HTTP error")
             else:
                 break
 
