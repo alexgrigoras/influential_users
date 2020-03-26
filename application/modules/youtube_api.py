@@ -1,16 +1,11 @@
-import csv
 import os
 import math
 import json
-import itertools
-from dotenv import load_dotenv
+import pickle
 
+from dotenv import load_dotenv
 from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
-
-"""
-Taken from https://python.gotrained.com/youtube-api-extracting-comments/
-"""
 
 load_dotenv()
 DEVELOPER_KEY = os.getenv('GOOGLE_DEV_KEY')
@@ -23,6 +18,7 @@ class YoutubeAPI:
         self.auth_service = self.__authentication_service()
         self.channels = []
         self.videos = []
+        self.videos_details = []
         self.comments = []
 
     @staticmethod
@@ -36,6 +32,19 @@ class YoutubeAPI:
         f.write(json_data)
         f.close()
 
+    @staticmethod
+    def __read_or_new_pickle(path, data):
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                try:
+                    print("Using cached search result")
+                    return pickle.load(f)
+                except Exception:
+                    pass
+        with open(path, "wb") as f:
+            pickle.dump(data, f)
+        return data
+
     def __get_video_comments(self, **kwargs):
         comments = []
         try:
@@ -46,8 +55,26 @@ class YoutubeAPI:
 
         while results:
             for item in results['items']:
-                comment = item['snippet']['topLevelComment']['snippet']['textDisplay']
-                comments.append(comment)
+                comments.append({
+                    'id': item['id'],
+                    'video_id': item['snippet']['topLevelComment']['snippet']['videoId'],
+                    'author_name': item['snippet']['topLevelComment']['snippet']['authorDisplayName'],
+                    'author_id': item['snippet']['topLevelComment']['snippet']['authorChannelId'],
+                    'text': item['snippet']['topLevelComment']['snippet']['textDisplay'],
+                    'like_count': item['snippet']['topLevelComment']['snippet']['likeCount'],
+                    'published_at': item['snippet']['topLevelComment']['snippet']['publishedAt']
+                })
+                if 'replies' in item:
+                    for r_item in item['replies']['comments']:
+                        comments.append({
+                            'id': r_item['id'],
+                            'video_id': r_item['snippet']['videoId'],
+                            'author_name': r_item['snippet']['authorDisplayName'],
+                            'author_id': r_item['snippet']['authorChannelId'],
+                            'text': r_item['snippet']['textDisplay'],
+                            'like_count': r_item['snippet']['likeCount'],
+                            'published_at': r_item['snippet']['publishedAt']
+                        })
 
             # Check if another page exists
             if 'nextPageToken' in results:
@@ -67,11 +94,12 @@ class YoutubeAPI:
             for item in results['items']:
                 details = {
                     'video_id': item['id'],
-                    'view_count': item['statistics']['viewCount'],
-                    'like_count': item['statistics']['likeCount'],
-                    'dislike_count': item['statistics']['dislikeCount'],
-                    'favorite_count': item['statistics']['favoriteCount'],
-                    'comment_count': item['statistics']['commentCount']
+                    'view_count': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
+                    'like_count': item['statistics']['likeCount'] if 'likeCount' in item['statistics'] else 0,
+                    'dislike_count': item['statistics']['dislikeCount'] if 'dislikeCount' in item['statistics'] else 0,
+                    'favorite_count': item['statistics']['favoriteCount']
+                    if 'favoriteCount' in item['statistics'] else 0,
+                    'comment_count': item['statistics']['commentCount'] if 'commentCount' in item['statistics'] else 0
                 }
 
                 final_results.append(details)
@@ -131,10 +159,14 @@ class YoutubeAPI:
         else:
             order = "relevance"
 
-        results = self.__get_videos(nr_pages, q=search_keyword, part='id,snippet', eventType='completed', type='video',
-                                    maxResults=max_results, order=order)
+        results = self.__read_or_new_pickle(
+            path="../data/cache/" + search_keyword + ".pickle",
+            data=self.__get_videos(nr_pages, q=search_keyword, part='id,snippet', eventType='completed',
+                                        type='video', maxResults=max_results, order=order)
+        )
 
         videos_list = []
+        channels_list = []
 
         for item in results:
             title = item['snippet']['title']
@@ -146,12 +178,16 @@ class YoutubeAPI:
                 print(" > Channel: " + title)
 
                 channel_id = item['id']['channelId']
+
                 self.channels.append({
                     "id": channel_id,
                     "title": title,
                     "description": description,
                     "published_at": published_at
                 })
+
+                channels_list.append(channel_id)
+
             elif kind == 'youtube#video':
                 print(" > Video: " + title)
 
@@ -168,28 +204,26 @@ class YoutubeAPI:
                     "published_at": published_at,
                 })
 
-                comments = self.__get_video_comments(part='snippet,replies', videoId=video_id, textFormat='plainText',
-                                                     maxResults=100, order='time')
-                for comment in comments:
-                    self.comments.append({
-                        "video_id": video_id,
-                        "comment": comment
-                    })
+                self.comments = self.__get_video_comments(part='snippet,replies', videoId=video_id,
+                                                          textFormat='plainText',
+                                                          maxResults=100, order='time')
 
         videos_id_str = ""
         for vid in videos_list:
             videos_id_str += vid + ','
-        details = self.__get_video_details(part='statistics', id=videos_id_str, maxResults=max_results)
+        self.videos_details = self.__get_video_details(part='statistics', id=videos_id_str, maxResults=max_results)
 
         self.__write_json_to_file(self.channels, "channels")
         self.__write_json_to_file(self.videos, "videos")
+        self.__write_json_to_file(self.videos_details, "video_details")
         self.__write_json_to_file(self.comments, "comments")
 
 
 if __name__ == '__main__':
-    keyword = input('Enter a keyword: ')
+    # keyword = input('Enter a keyword: ')
+    keyword = "dji"
 
-    nr_results = 5
+    nr_results = 30
 
     api = YoutubeAPI()
 
