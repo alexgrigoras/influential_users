@@ -1,11 +1,11 @@
-import os
-import math
 import json
+import math
+import os
 import pickle
 
 from dotenv import load_dotenv
-from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 load_dotenv()
 DEVELOPER_KEY = os.getenv('GOOGLE_DEV_KEY')
@@ -21,43 +21,57 @@ class YoutubeAPI:
         self.videos = []
         self.video_statistics = []
         self.comments = []
+        self.remaining_tokens = []
+        self.search_results = []
 
-    def search(self, **kwargs):
-        print("Searching videos by keyword [" + kwargs.get("k") + "]:")
+    def search(self, keyword, nr_results=50, order='relevance', search_type='keyword', location_radius='100km',
+               content_type=None):
+        print("Searching videos by keyword [" + keyword + "]:")
 
-        keyword = ""
-
-        if "k" in kwargs.keys():
-            keyword = kwargs.get("k")
-        elif "l" in kwargs.keys():
-            search_location = kwargs.get("l")
-        else:
-            print("Invalid search parameters")
+        if not keyword:
+            print("Empty keyword")
             return
 
         nr_pages = 1
         max_results = 50
-        if "nr" in kwargs.keys():
-            nr_of_results = kwargs.get("nr")
-            if nr_of_results > 50:
-                nr_pages = math.ceil(nr_of_results / 50)
-            else:
-                max_results = nr_of_results
-
-        if "order" in kwargs.keys():
-            order = kwargs.get("order")
+        if 50 < nr_results < 1000:
+            nr_pages = math.ceil(nr_results / 50)
         else:
-            order = "relevance"
+            max_results = nr_results
 
+        if order not in ['date', 'rating', 'relevance', 'title', 'videoCount', 'viewCount']:
+            print("Invalid order")
+            return
+
+        if content_type is None:
+            content_type = ['video', 'channel', 'playlist']
+            for ct in content_type:
+                if ct not in ['video', 'channel', 'playlist']:
+                    print("Invalid content type")
+                    return
+        content_str = ""
+        for s in content_type:
+            content_str += s + ','
+
+        # get search value from cache
         results = self.__read_cache(keyword)
-
         if results is None:
-            results = self.__get_results(nr_pages, q=keyword, part='id,snippet', eventType='completed',
-                                         type='video', maxResults=max_results, order=order)
-            self.__write_cache(keyword, results)
+            if search_type is 'keyword':
+                results = self.__get_search_results(nr_pages, q=keyword, part='id,snippet', eventType='completed',
+                                                    maxResults=max_results, order=order, type=content_str)
+                self.__write_cache(keyword, results)
+            elif search_type is 'location':
+                results = self.__get_search_results(nr_pages, location=keyword, part='id,snippet',
+                                                    eventType='completed',
+                                                    maxResults=max_results, order=order, type=content_str)
+                self.__write_cache(keyword, results)
+            else:
+                print("Invalid search parameters")
+                return
 
         videos_list = []
         channels_list = []
+        search_data = []
 
         for item in results:
             title = item['snippet']['title']
@@ -69,6 +83,10 @@ class YoutubeAPI:
                 print(" > Channel: " + title)
 
                 channel_id = item['id']['channelId']
+                search_data.append({
+                    'kind': kind,
+                    'channelId': channel_id
+                })
                 channels_list.append(channel_id)
 
                 playlists = self.__get_channel_playlists(
@@ -94,12 +112,32 @@ class YoutubeAPI:
                     "playlists": playlists
                 })
 
+            if kind == 'youtube#playlist':
+                print(" > Playlist: " + title)
+
+                playlist_id = item['id']['playlistId']
+                search_data.append({
+                    'kind': kind,
+                    'playlistId': playlist_id
+                })
+
+                playlist_videos = self.__get_playlist_videos(
+                    part='snippet',
+                    playlistId=playlist_id,
+                    maxResults=50
+                )
+
+                self.videos.extend(playlist_videos)
+
             elif kind == 'youtube#video':
                 print(" > Video: " + title)
 
                 video_id = item['id']['videoId']
                 channel_id = item['snippet']['channelId']
-
+                search_data.append({
+                    'kind': kind,
+                    'videoId': video_id
+                })
                 videos_list.append(video_id)
 
                 self.videos.append({
@@ -133,25 +171,43 @@ class YoutubeAPI:
             channels_id_str += cid + ','
         self.channel_statistics = self.__get_channel_statistics(part='statistics', id=channels_id_str, maxResults=50)
 
+        self.search_results.append({
+            'keyword': keyword,
+            'nr_results': nr_results,
+            'order': order,
+            'search_type': search_type,
+            'location_radius': location_radius,
+            'content_type': content_type,
+            'results': search_data
+        })
+
+        self.__write_json_to_file(self.search_results, 'searchResults')
         self.__write_json_to_file(self.channels, "channels")
         self.__write_json_to_file(self.channel_statistics, "channelStatistics")
         self.__write_json_to_file(self.videos, "videos")
         self.__write_json_to_file(self.video_statistics, "videoStatistics")
         self.__write_json_to_file(self.comments, "comments")
+        self.__write_json_to_file(self.remaining_tokens, "remainingTokens")
 
-    def __get_results(self, nr_pages, **kwargs):
-        final_results = []
+    def __get_search_results(self, nr_pages, **kwargs):
         index = 0
-
         results = []
+        final_results = []
+        temp_token = {}
+
         try:
             results = self.__auth_service.search().list(**kwargs).execute()
         except HttpError:
             print("HTTP error")
         while results and index < nr_pages:
             final_results.extend(results['items'])
+
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
+                temp_token = {
+                    'type': 'search',
+                    'last_token': results['nextPageToken']
+                }
                 try:
                     results = self.__auth_service.search().list(**kwargs).execute()
                     index += 1
@@ -160,12 +216,15 @@ class YoutubeAPI:
             else:
                 break
 
+        self.remaining_tokens.append(temp_token)
+
         return final_results
 
     def __get_channel_statistics(self, **kwargs):
-        final_results = []
-
         results = []
+        final_results = []
+        temp_token = {}
+
         try:
             results = self.__auth_service.channels().list(**kwargs).execute()
         except HttpError:
@@ -175,7 +234,8 @@ class YoutubeAPI:
                 details = {
                     '_id': item['id'],
                     'viewCount': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
-                    'subscriberCount': item['statistics']['subscriberCount'] if 'subscriberCount' in item['statistics'] else 0,
+                    'subscriberCount': item['statistics']['subscriberCount'] if 'subscriberCount' in item[
+                        'statistics'] else 0,
                     'videoCount': item['statistics']['videoCount'] if 'videoCount' in item['statistics'] else 0,
                     'commentCount': item['statistics']['commentCount'] if 'commentCount' in item['statistics'] else 0
                 }
@@ -183,6 +243,10 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
+                temp_token = {
+                    'type': 'channels',
+                    'last_token': results['nextPageToken']
+                }
                 try:
                     results = self.__auth_service.channels().list(**kwargs).execute()
                 except HttpError:
@@ -190,12 +254,15 @@ class YoutubeAPI:
             else:
                 break
 
+        self.remaining_tokens.append(temp_token)
+
         return final_results
 
     def __get_channel_playlists(self, **kwargs):
-        final_results = []
-
         results = []
+        final_results = []
+        temp_token = {}
+
         try:
             results = self.__auth_service.playlists().list(**kwargs).execute()
         except HttpError:
@@ -211,6 +278,10 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
+                temp_token = {
+                    'type': 'search',
+                    'last_token': results['nextPageToken']
+                }
                 try:
                     results = self.__auth_service.playlists().list(**kwargs).execute()
                 except HttpError:
@@ -218,12 +289,15 @@ class YoutubeAPI:
             else:
                 break
 
+        self.remaining_tokens.append(temp_token)
+
         return final_results
 
     def __get_playlist_videos(self, **kwargs):
-        final_results = []
-
         results = []
+        final_results = []
+        temp_token = {}
+
         try:
             results = self.__auth_service.playlistItems().list(**kwargs).execute()
         except HttpError:
@@ -241,6 +315,10 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
+                temp_token = {
+                    'type': 'search',
+                    'last_token': results['nextPageToken']
+                }
                 try:
                     results = self.__auth_service.playlistItems().list(**kwargs).execute()
                 except HttpError:
@@ -248,12 +326,15 @@ class YoutubeAPI:
             else:
                 break
 
+        self.remaining_tokens.append(temp_token)
+
         return final_results
 
     def __get_video_statistics(self, **kwargs):
-        final_results = []
-
         results = []
+        final_results = []
+        temp_token = {}
+
         try:
             results = self.__auth_service.videos().list(**kwargs).execute()
         except HttpError:
@@ -265,13 +346,18 @@ class YoutubeAPI:
                     'viewCount': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
                     'likeCount': item['statistics']['likeCount'] if 'likeCount' in item['statistics'] else 0,
                     'dislikeCount': item['statistics']['dislikeCount'] if 'dislikeCount' in item['statistics'] else 0,
-                    'favoriteCount': item['statistics']['favoriteCount'] if 'favoriteCount' in item['statistics'] else 0,
+                    'favoriteCount': item['statistics']['favoriteCount'] if 'favoriteCount' in item[
+                        'statistics'] else 0,
                     'commentCount': item['statistics']['commentCount'] if 'commentCount' in item['statistics'] else 0
                 }
                 final_results.append(details)
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
+                temp_token = {
+                    'type': 'search',
+                    'last_token': results['nextPageToken']
+                }
                 try:
                     results = self.__auth_service.videos().list(**kwargs).execute()
                 except HttpError:
@@ -279,33 +365,36 @@ class YoutubeAPI:
             else:
                 break
 
+        self.remaining_tokens.append(temp_token)
+
         return final_results
 
     def __get_video_comments(self, **kwargs):
-        comments = []
+        results = []
+        final_results = []
+        temp_token = {}
+        nr_pages = 20
+        index = 0
+
         try:
             results = self.__auth_service.commentThreads().list(**kwargs).execute()
         except HttpError:
             print("HTTP error")
-            results = []
-
-        nr_pages = 10
-        index = 0
         while results and index < nr_pages:
             for item in results['items']:
-                comments.append({
+                final_results.append({
                     '_id': item['id'],
                     'videoId': item['snippet']['topLevelComment']['snippet']['videoId'],
                     'authorName': item['snippet']['topLevelComment']['snippet']['authorDisplayName'],
                     'authorId': item['snippet']['topLevelComment']['snippet']['authorChannelId']['value']
-                                if 'authorChannelId' in item['snippet']['topLevelComment']['snippet'] else "",
+                    if 'authorChannelId' in item['snippet']['topLevelComment']['snippet'] else "",
                     'text': item['snippet']['topLevelComment']['snippet']['textDisplay'],
                     'likeCount': item['snippet']['topLevelComment']['snippet']['likeCount'],
                     'publishedAt': item['snippet']['topLevelComment']['snippet']['publishedAt']
                 })
                 if 'replies' in item:
                     for r_item in item['replies']['comments']:
-                        comments.append({
+                        final_results.append({
                             '_id': r_item['id'],
                             'videoId': r_item['snippet']['videoId'],
                             'authorName': r_item['snippet']['authorDisplayName'],
@@ -316,6 +405,10 @@ class YoutubeAPI:
                         })
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
+                temp_token = {
+                    'type': 'search',
+                    'last_token': results['nextPageToken']
+                }
                 try:
                     results = self.__auth_service.commentThreads().list(**kwargs).execute()
                     index += 1
@@ -324,7 +417,9 @@ class YoutubeAPI:
             else:
                 break
 
-        return comments
+        self.remaining_tokens.append(temp_token)
+
+        return final_results
 
     @staticmethod
     def __authentication_service():
@@ -361,10 +456,10 @@ class YoutubeAPI:
 
 if __name__ == '__main__':
     # keyword = input('Enter a keyword: ')
-    search_keyword = "linus tech tips"
+    search_keyword = 'linus tech tips'
 
-    nr_results = 5
+    nr_videos = 30
 
     api = YoutubeAPI()
 
-    api.search(k=search_keyword, nr=nr_results, order='relevance')
+    api.search(search_keyword, nr_videos)
