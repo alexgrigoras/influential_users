@@ -24,8 +24,6 @@ The main components of the application are
 ```
 influential_users
 ├── youtube_sentiment_analysis
-|   ├── data
-|   |   └── cache 
 |   ├── modules
 |   |   ├── __init__.py
 |   |   ├── crawler.py
