@@ -1,11 +1,11 @@
-import json
 import math
 import os
-import pickle
-from application.modules.database import Database
+
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+from application.modules.mongodb import MongoDB
 
 load_dotenv()
 DEVELOPER_KEY = os.getenv('GOOGLE_DEV_KEY')
@@ -13,19 +13,15 @@ YOUTUBE_API_SERVICE_NAME = 'youtube'
 YOUTUBE_API_VERSION = 'v3'
 
 
-class YoutubeAPI:
+class YoutubeAPI():
     def __init__(self):
-        self.__auth_service = self.__authentication_service()
-        self.__db = Database()
+        self.__db = MongoDB()
         self.__max_results = 0
         self.search_results = []
-        self.channel_statistics = []
-        self.videos = []
-        self.video_statistics = []
-        self.comments = []
-        self.remaining_tokens = []
 
-    def search(self, keyword, nr_results=50, order='relevance', page_token=None, search_type='keyword',
+        self.__get_authentication_service()
+
+    def search(self, keyword, nr_results=50, order='relevance', page_token="", search_type='keyword',
                location_radius='100km', content_type=None):
         print("Searching resources by keyword [" + keyword + "]:")
 
@@ -39,6 +35,10 @@ class YoutubeAPI:
             nr_pages = math.ceil(nr_results / 50)
         else:
             self.__max_results = nr_results
+
+        if search_type not in ['keyword', 'location']:
+            print("Invalid search type")
+            return
 
         if order not in ['date', 'rating', 'relevance', 'title', 'videoCount', 'viewCount']:
             print("Invalid order")
@@ -54,29 +54,30 @@ class YoutubeAPI:
         for s in content_type:
             content_str += s + ','
 
-        results = self.__db.get_search_results({
+        search_query = {
             'keyword': keyword,
+            'pageToken': page_token,
             'selectedNrResults': nr_results,
             'order': order,
             'search_type': search_type,
             'location_radius': location_radius,
             'content_type': content_type
-        })
+        }
 
-        if results:
-            print("Getting cached search with keyword: " + keyword)
-            self.search_results = results.next()
-        else:
+        self.search_results = self.__check_cache(search_query)
+
+        if not self.search_results:
             print("Requesting data from youtube api")
 
             if search_type is 'keyword':
                 results, etag, total_results = self.__get_search_results(nr_pages, q=keyword, part='id,snippet',
                                                                          maxResults=self.__max_results, order=order,
-                                                                         type=content_str)
+                                                                         type=content_str, pageToken=page_token)
             elif search_type is 'location':
                 results, etag, total_results = self.__get_search_results(nr_pages, location=keyword, part='id,snippet',
                                                                          maxResults=self.__max_results, order=order,
-                                                                         type=content_str)
+                                                                         type=content_str, pageToken=page_token,
+                                                                         locationRadius=location_radius)
             else:
                 print("Invalid search parameters")
                 return
@@ -93,7 +94,7 @@ class YoutubeAPI:
                 'results': results
             })
 
-            self.__db.insert_search_results(self.search_results)
+            self.__write_cache()
 
     def process_results(self):
         videos_list = []
@@ -103,7 +104,7 @@ class YoutubeAPI:
             print("Search results are empty")
             return
 
-        for item in self.search_results['results']:
+        for item in self.search_results[0]['results']:
             title = item['snippet']['title']
             description = item['snippet']['description']
             published_at = item['snippet']['publishedAt']
@@ -160,8 +161,7 @@ class YoutubeAPI:
                     "title": title,
                     "description": description,
                     "publishedAt": published_at,
-                    "statistics": [],
-                    "comments": []
+                    "statistics": []
                 })
 
                 self.__get_video_comments(
@@ -182,18 +182,18 @@ class YoutubeAPI:
             channels_id_str += cid + ','
         self.__get_channel_statistics(part='statistics', id=channels_id_str, maxResults=50)
 
-        self.__db.insert_remaining_tokens(self.remaining_tokens)
-
     def __get_search_results(self, nr_pages, **kwargs):
         index = 0
         results = []
         final_results = []
         temp_token = {}
+        etag = ""
+        total_results = 0
 
         try:
-            results = self.__auth_service.search().list(**kwargs).execute()
-        except HttpError:
-            print("HTTP error")
+            results = self.__service.search().list(**kwargs).execute()
+        except HttpError as e:
+            print("HTTP error: " + str(e))
 
         if results:
             etag = results['etag']
@@ -205,58 +205,61 @@ class YoutubeAPI:
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
                 temp_token = {
+                    '_id': results['nextPageToken'],
+                    'keyword': kwargs['q'],
                     'type': 'search',
-                    'last_token': results['nextPageToken']
+                    'query': kwargs
                 }
                 try:
-                    results = self.__auth_service.search().list(**kwargs).execute()
+                    results = self.__service.search().list(**kwargs).execute()
                     index += 1
-                except HttpError:
-                    print("HTTP error")
+                except HttpError as e:
+                    print("HTTP error: " + str(e))
             else:
                 break
 
-        self.remaining_tokens.append(temp_token)
+        if temp_token:
+            self.__db.insert_remaining_token(temp_token)
 
         return final_results, etag, total_results
 
     def __get_channel_statistics(self, **kwargs):
         results = []
-        final_results = []
         temp_token = {}
 
         try:
-            results = self.__auth_service.channels().list(**kwargs).execute()
-        except HttpError:
-            print("HTTP error")
+            results = self.__service.channels().list(**kwargs).execute()
+        except HttpError as e:
+            print("HTTP error: " + str(e))
         while results:
             for item in results['items']:
                 cid = item['id']
                 statistics = {
-                    'statistics': {
-                        'viewCount': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
-                        'subscriberCount': item['statistics']['subscriberCount'] if 'subscriberCount' in item[
-                            'statistics'] else 0,
-                        'videoCount': item['statistics']['videoCount'] if 'videoCount' in item['statistics'] else 0,
-                        'commentCount': item['statistics']['commentCount'] if 'commentCount' in item['statistics'] else 0
-                    }
+                    'viewCount': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
+                    'subscriberCount': item['statistics']['subscriberCount'] if 'subscriberCount' in item[
+                        'statistics'] else 0,
+                    'videoCount': item['statistics']['videoCount'] if 'videoCount' in item['statistics'] else 0,
+                    'commentCount': item['statistics']['commentCount'] if 'commentCount' in item[
+                        'statistics'] else 0
                 }
                 self.__db.insert_video_statistics(cid, statistics)
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
                 temp_token = {
-                    'type': 'channels',
-                    'last_token': results['nextPageToken']
+                    '_id': results['nextPageToken'],
+                    'type': 'channel_statistics',
+                    'query': kwargs
                 }
                 try:
-                    results = self.__auth_service.channels().list(**kwargs).execute()
-                except HttpError:
-                    print("HTTP error")
+                    results = self.__service.channels().list(**kwargs).execute()
+                except HttpError as e:
+                    print("HTTP error: " + str(e))
             else:
                 break
 
-        self.remaining_tokens.append(temp_token)
+        if temp_token:
+            self.__db.insert_remaining_token(temp_token)
 
     def __get_channel_playlists(self, **kwargs):
         results = []
@@ -264,9 +267,9 @@ class YoutubeAPI:
         temp_token = {}
 
         try:
-            results = self.__auth_service.playlists().list(**kwargs).execute()
-        except HttpError:
-            print("HTTP error")
+            results = self.__service.playlists().list(**kwargs).execute()
+        except HttpError as e:
+            print("HTTP error: " + str(e))
         while results:
             for item in results['items']:
                 playlists = {
@@ -279,17 +282,19 @@ class YoutubeAPI:
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
                 temp_token = {
-                    'type': 'search',
-                    'last_token': results['nextPageToken']
+                    '_id': results['nextPageToken'],
+                    'type': 'channel_playlists',
+                    'query': kwargs
                 }
                 try:
-                    results = self.__auth_service.playlists().list(**kwargs).execute()
-                except HttpError:
-                    print("HTTP error")
+                    results = self.__service.playlists().list(**kwargs).execute()
+                except HttpError as e:
+                    print("HTTP error: " + str(e))
             else:
                 break
 
-        self.remaining_tokens.append(temp_token)
+        if temp_token:
+            self.__db.insert_remaining_token(temp_token)
 
         return final_results
 
@@ -299,9 +304,9 @@ class YoutubeAPI:
         temp_token = {}
 
         try:
-            results = self.__auth_service.playlistItems().list(**kwargs).execute()
-        except HttpError:
-            print("HTTP error")
+            results = self.__service.playlistItems().list(**kwargs).execute()
+        except HttpError as e:
+            print("HTTP error: " + str(e))
         while results:
             for item in results['items']:
                 video = {
@@ -311,24 +316,25 @@ class YoutubeAPI:
                     'description': item['snippet']['description'],
                     'publishedAt': item['snippet']['publishedAt'],
                     'statistics': [],
-                    'comments': []
                 }
                 self.__db.insert_video(video)
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
                 temp_token = {
-                    'type': 'search',
-                    'last_token': results['nextPageToken']
+                    '_id': results['nextPageToken'],
+                    'type': 'playlist_videos',
+                    'query': kwargs
                 }
                 try:
-                    results = self.__auth_service.playlistItems().list(**kwargs).execute()
-                except HttpError:
-                    print("HTTP error")
+                    results = self.__service.playlistItems().list(**kwargs).execute()
+                except HttpError as e:
+                    print("HTTP error: " + str(e))
             else:
                 break
 
-        self.remaining_tokens.append(temp_token)
+        if temp_token:
+            self.__db.insert_remaining_token(temp_token)
 
         return final_results
 
@@ -337,134 +343,151 @@ class YoutubeAPI:
         temp_token = {}
 
         try:
-            results = self.__auth_service.videos().list(**kwargs).execute()
-        except HttpError:
-            print("HTTP error")
+            results = self.__service.videos().list(**kwargs).execute()
+        except HttpError as e:
+            print("HTTP error: " + str(e))
         while results:
             for item in results['items']:
                 vid = item['id']
-                statistics = {
-                    'statistics': {
-                        'viewCount': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
-                        'likeCount': item['statistics']['likeCount'] if 'likeCount' in item['statistics'] else 0,
-                        'dislikeCount': item['statistics']['dislikeCount'] if 'dislikeCount' in item['statistics'] else 0,
-                        'favoriteCount': item['statistics']['favoriteCount'] if 'favoriteCount' in item[
-                            'statistics'] else 0,
-                        'commentCount': item['statistics']['commentCount'] if 'commentCount' in item['statistics'] else 0
-                    }
+                statistics= {
+                    'viewCount': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
+                    'likeCount': item['statistics']['likeCount'] if 'likeCount' in item['statistics'] else 0,
+                    'dislikeCount': item['statistics']['dislikeCount'] if 'dislikeCount' in item[
+                        'statistics'] else 0,
+                    'favoriteCount': item['statistics']['favoriteCount'] if 'favoriteCount' in item[
+                        'statistics'] else 0,
+                    'commentCount': item['statistics']['commentCount'] if 'commentCount' in item[
+                        'statistics'] else 0
                 }
                 self.__db.insert_video_statistics(vid, statistics)
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
                 temp_token = {
-                    'type': 'search',
-                    'last_token': results['nextPageToken']
+                    '_id': results['nextPageToken'],
+                    'type': 'video_statistics',
+                    'query': kwargs
                 }
                 try:
-                    results = self.__auth_service.videos().list(**kwargs).execute()
-                except HttpError:
-                    print("HTTP error")
+                    results = self.__service.videos().list(**kwargs).execute()
+                except HttpError as e:
+                    print("HTTP error: " + str(e))
             else:
                 break
 
-        self.remaining_tokens.append(temp_token)
+        if temp_token:
+            self.__db.insert_remaining_token(temp_token)
 
     def __get_video_comments(self, **kwargs):
         results = []
         final_results = []
         temp_token = {}
-        nr_pages = 20
+        nr_pages = 50
         index = 0
 
         try:
-            results = self.__auth_service.commentThreads().list(**kwargs).execute()
-        except HttpError:
-            print("HTTP error")
+            results = self.__service.commentThreads().list(**kwargs).execute()
+        except HttpError as e:
+            print("HTTP error: " + str(e))
         while results and index < nr_pages:
             for item in results['items']:
                 cid = item['id']
-                self.__db.insert_comment(cid, {
+                self.__db.insert_comment({
+                    '_id': item['id'],
                     'videoId': item['snippet']['topLevelComment']['snippet']['videoId'],
                     'authorName': item['snippet']['topLevelComment']['snippet']['authorDisplayName'],
                     'authorId': item['snippet']['topLevelComment']['snippet']['authorChannelId']['value']
                         if 'authorChannelId' in item['snippet']['topLevelComment']['snippet'] else "",
                     'text': item['snippet']['topLevelComment']['snippet']['textDisplay'],
                     'likeCount': item['snippet']['topLevelComment']['snippet']['likeCount'],
-                    'publishedAt': item['snippet']['topLevelComment']['snippet']['publishedAt']
+                    'publishedAt': item['snippet']['topLevelComment']['snippet']['publishedAt'],
+                    'replies': []
                 })
                 if 'replies' in item:
                     for r_item in item['replies']['comments']:
-                        cid = item['id']
-                        self.__db.insert_comment(cid, {
-                            'videoId': item['snippet']['topLevelComment']['snippet']['videoId'],
-                            'authorName': item['snippet']['topLevelComment']['snippet']['authorDisplayName'],
-                            'authorId': item['snippet']['topLevelComment']['snippet']['authorChannelId']['value']
-                            if 'authorChannelId' in item['snippet']['topLevelComment']['snippet'] else "",
-                            'text': item['snippet']['topLevelComment']['snippet']['textDisplay'],
-                            'likeCount': item['snippet']['topLevelComment']['snippet']['likeCount'],
-                            'publishedAt': item['snippet']['topLevelComment']['snippet']['publishedAt']
+                        self.__db.insert_comment_reply(cid, {
+                            '_id': r_item['id'],
+                            'videoId': r_item['snippet']['videoId'],
+                            'authorName': r_item['snippet']['authorDisplayName'],
+                            'authorId': r_item['snippet']['authorChannelId']['value']
+                                if 'authorChannelId' in r_item['snippet'] else "",
+                            'text': r_item['snippet']['textDisplay'],
+                            'likeCount': r_item['snippet']['likeCount'],
+                            'publishedAt': r_item['snippet']['publishedAt']
                         })
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
                 temp_token = {
-                    'type': 'search',
-                    'last_token': results['nextPageToken']
+                    '_id': results['nextPageToken'],
+                    'type': 'video_comments',
+                    'query': kwargs
                 }
                 try:
-                    results = self.__auth_service.commentThreads().list(**kwargs).execute()
+                    results = self.__service.commentThreads().list(**kwargs).execute()
                     index += 1
-                except HttpError:
-                    print("HTTP error")
+                except HttpError as e:
+                    print("HTTP error: " + str(e))
             else:
                 break
 
-        self.remaining_tokens.append(temp_token)
+        if temp_token:
+            self.__db.insert_remaining_token(temp_token)
 
         return final_results
 
-    @staticmethod
-    def __authentication_service():
-        return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=DEVELOPER_KEY)
+    def __get_authentication_service(self):
+        self.__service = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=DEVELOPER_KEY)
 
-    @staticmethod
-    def __write_json_to_file(data, file_name):
-        json_data = json.dumps(data, indent=4)
-        f = open("../data/" + file_name + ".json", "w")
-        f.write(json_data)
-        f.close()
+    def __check_cache(self, query):
+        results = self.__db.get_search_results(query)
 
-    @staticmethod
-    def __read_cache(keyword):
-        path = "../data/cache/" + keyword + ".pickle"
-        if os.path.isfile(path):
-            with open(path, "rb") as f:
-                try:
-                    print("Using cached search result for keyword: " + keyword)
-                    return pickle.load(f)
-                except Exception as e:
-                    print(e)
-                    return None
+        if results:
+            print("Getting cached search with keyword: " + query['keyword'])
+            return results.next()
         else:
-            return None
+            return []
 
-    @staticmethod
-    def __write_cache(keyword, data):
-        path = "../data/cache/" + keyword
-        os.makedirs(path)
-        extension = ".pickle"
-        with open(path + extension, "w+") as f:
-            pickle.dump(data, f)
-        return data
+    def __write_cache(self):
+        self.__db.insert_search_results(self.search_results)
 
+    def process_tokens(self, nr_results, content_type=None, location_radius=None, order=None):
+        tokens = self.__db.get_tokens()
+        if tokens:
+            print("Processing remaining page tokens")
+            for t in tokens:
+                token_type = t['type']
+                args = t['query']
+                token_id = t['_id']
+                args['page_token'] = token_id
 
-if __name__ == '__main__':
-    # keyword = input('Enter a keyword: ')
-    search_keyword = 'dji'
+                if token_type is "search":
+                    print("search")
+                    keyword = t['keyword']
+                    if 'q' in t['query']:
+                        self.search(keyword, nr_results, location_radius=location_radius, order=order,
+                                    search_type='keyword', page_token=token_id, content_type=content_type)
+                    elif 'location' in t['query']:
+                        self.search(keyword, nr_results, location_radius=location_radius, order=order,
+                                    search_type='location', page_token=token_id, content_type=content_type)
 
-    nr_videos = 10
+                elif token_type is 'channel_statistics':
+                    print("channel_statistics")
+                    self.__get_channel_statistics(**args)
 
-    api = YoutubeAPI()
+                elif token_type is 'channel_playlists':
+                    print("channel_playlists")
+                    self.__get_channel_playlists(**args)
 
-    api.search(search_keyword, nr_videos)
-    api.process_results()
+                elif token_type is 'playlist_videos':
+                    print("playlist_videos")
+                    self.__get_playlist_videos(**args)
+
+                elif token_type is 'video_statistics':
+                    print("video_statistics")
+                    self.__get_video_statistics(**args)
+
+                elif token_type is 'video_comments':
+                    print("video_comments")
+                    self.__get_video_comments(**args)
+
+                self.__db.remove_token(token_id)
