@@ -135,3 +135,4 @@ dmypy.json
 /.idea/vcs.xml
 /application/modules/client_secret.json
 /application/data/comments.csv
+/application/.cache/
