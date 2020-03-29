@@ -2,28 +2,33 @@ import pymongo
 from pymongo import errors
 
 DATABASE_NAME = "influential_users"
+SEARCH_RESULTS_COLLECTION = "search_results"
+CHANNELS_COLLECTION = "channels"
+VIDEOS_COLLECTION = "videos"
+COMMENTS_COLLECTION = "comments"
+TOKENS_COLLECTION = "tokens"
 
 
-class MongoDB():
+class MongoDB:
     def __init__(self):
         self.__mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
 
         self.__db = self.__mongo_client[DATABASE_NAME]
 
-        self.__search_results_col = self.__db['searchResults']
-        self.__channels_col = self.__db['channels']
-        self.__videos_col = self.__db['videos']
-        self.__comments_col = self.__db['comments']
-        self.__tokens_col = self.__db['tokens']
+        self.__search_results_col = self.__db[SEARCH_RESULTS_COLLECTION]
+        self.__channels_col = self.__db[CHANNELS_COLLECTION]
+        self.__videos_col = self.__db[VIDEOS_COLLECTION]
+        self.__comments_col = self.__db[COMMENTS_COLLECTION]
+        self.__tokens_col = self.__db[TOKENS_COLLECTION]
 
     def insert_search_results(self, data):
         try:
             self.__search_results_col.insert_many(data)
         except errors.DuplicateKeyError:
-            #print("Duplicate key")
+            # print("Duplicate key")
             pass
         except errors.BulkWriteError:
-            #print("Bulk write error")
+            # print("Bulk write error")
             pass
 
     def get_search_results(self, query):
@@ -36,79 +41,79 @@ class MongoDB():
         try:
             self.__channels_col.insert_one(data)
         except errors.DuplicateKeyError:
-            #print("Duplicate key")
+            # print("Duplicate key")
             pass
         except errors.BulkWriteError:
-            #print("Bulk write error")
+            # print("Bulk write error")
             pass
 
-    def insert_channel_statistics(self, id, data):
+    def insert_channel_statistics(self, channel_id, statistics):
         try:
             self.__channels_col.update_one(
-                {'_id': id},
-                {'$set': {'statistics': data}}
+                {'_id': channel_id},
+                {'$addToSet': {'statistics': statistics}}
             )
         except errors.DuplicateKeyError:
-            #print("Duplicate key")
+            # print("Duplicate key")
             pass
         except errors.BulkWriteError:
-            #print("Bulk write error")
+            # print("Bulk write error")
             pass
 
     def insert_video(self, data):
         try:
             self.__videos_col.insert_one(data)
-        except errors.DuplicateKeyError:
-            #print("Duplicate key")
+        except errors.DuplicateKeyError as e:
+            print("Duplicate key: " + str(e))
             pass
-        except errors.WriteError:
-            #print("Bulk write error")
+        except errors.WriteError as e:
+            print("Bulk write error: " + str(e))
             pass
 
-    def insert_video_statistics(self, id, data):
+    def insert_video_statistics(self, video_id, data):
         try:
             self.__videos_col.update_one(
-                {'_id': id},
-                {'$addToSet': {'statistics': data}}
+                {'_id': video_id},
+                {'$set': {'statistics': data}}
             )
         except errors.DuplicateKeyError:
-            #print("Duplicate key")
+            print("Duplicate key")
             pass
         except errors.BulkWriteError:
-            #print("Bulk write error")
+            print("Bulk write error")
             pass
 
     def insert_comment(self, data):
         try:
             self.__comments_col.insert_one(data)
         except errors.DuplicateKeyError:
-            #print("Duplicate key")
+            # print("Duplicate key")
             pass
         except errors.BulkWriteError:
-            #print("Bulk write error")
+            # print("Bulk write error")
             pass
 
-    def insert_comment_reply(self, id, data):
+    def insert_comment_reply(self, comment_id, replies):
         try:
             self.__comments_col.update_one(
-                {'_id': id},
-                {'$addToSet': {'replies': data}}
+                {'_id': comment_id},
+                {'$addToSet': {'replies': replies}}
             )
         except errors.DuplicateKeyError:
-            #print("Duplicate key")
+            # print("Duplicate key")
             pass
         except errors.BulkWriteError:
-            #print("Bulk write error")
+            # print("Bulk write error")
             pass
 
-    def insert_remaining_token(self, data):
+    def insert_token(self, data):
         try:
             self.__tokens_col.insert_one(data)
         except errors.DuplicateKeyError:
-            #print("Duplicate key")
+            # print("Duplicate key")
             pass
         except errors.BulkWriteError:
-            #print("Bulk write error")
+            # print("Bulk write error")
             pass
 
     def get_tokens(self):
@@ -121,8 +126,8 @@ class MongoDB():
 
         return tokens
 
-    def remove_token(self, id):
+    def remove_token(self, token_id):
         try:
-            self.__tokens_col.delete_one({'_id': id})
+            self.__tokens_col.delete_one({'_id': token_id})
         except errors.InvalidId:
             print("Invalid id")
