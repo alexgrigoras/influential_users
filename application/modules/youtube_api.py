@@ -86,6 +86,10 @@ class YoutubeAPI:
                 print("Invalid search parameters")
                 return False
 
+            if results is False:
+                print("Data cannot be obtained")
+                return False
+
             self.search_results.append({
                 '_id': etag,
                 'keyword': keyword,
@@ -210,14 +214,14 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                temp_token = {
-                    '_id': results['nextPageToken'],
-                    'type': 'channel_statistics',
-                    "retrieval date": datetime.utcnow(),
-                    'query': kwargs
-                }
                 try:
                     results = self.__service.channels().list(**kwargs).execute()
+                    temp_token = {
+                        '_id': results['nextPageToken'],
+                        'type': 'channel_statistics',
+                        "retrieval date": datetime.utcnow(),
+                        'query': kwargs
+                    }
                 except HttpError as e:
                     print("HTTP error: " + str(e))
                     return False
@@ -249,14 +253,14 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                temp_token = {
-                    '_id': results['nextPageToken'],
-                    'type': 'channel_playlists',
-                    "retrieval date": datetime.utcnow(),
-                    'query': kwargs
-                }
                 try:
                     results = self.__service.playlists().list(**kwargs).execute()
+                    temp_token = {
+                        '_id': results['nextPageToken'],
+                        'type': 'channel_playlists',
+                        "retrieval date": datetime.utcnow(),
+                        'query': kwargs
+                    }
                 except HttpError as e:
                     print("HTTP error: " + str(e))
                     return False
@@ -291,14 +295,14 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                temp_token = {
-                    '_id': results['nextPageToken'],
-                    'type': 'playlist_videos',
-                    "retrieval date": datetime.utcnow(),
-                    'query': kwargs
-                }
                 try:
                     results = self.__service.playlistItems().list(**kwargs).execute()
+                    temp_token = {
+                        '_id': results['nextPageToken'],
+                        'type': 'playlist_videos',
+                        "retrieval date": datetime.utcnow(),
+                        'query': kwargs
+                    }
                 except HttpError as e:
                     print("HTTP error: " + str(e))
                     return False
@@ -335,14 +339,14 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                temp_token = {
-                    '_id': results['nextPageToken'],
-                    'type': 'video_statistics',
-                    "retrieval date": datetime.utcnow(),
-                    'query': kwargs
-                }
                 try:
                     results = self.__service.videos().list(**kwargs).execute()
+                    temp_token = {
+                        '_id': results['nextPageToken'],
+                        'type': 'video_statistics',
+                        "retrieval date": datetime.utcnow(),
+                        'query': kwargs
+                    }
                 except HttpError as e:
                     print("HTTP error: " + str(e))
                     return False
@@ -393,14 +397,14 @@ class YoutubeAPI:
                         })
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                temp_token = {
-                    '_id': results['nextPageToken'],
-                    'type': 'video_comments',
-                    "retrieval date": datetime.utcnow(),
-                    'query': kwargs
-                }
                 try:
                     results = self.__service.commentThreads().list(**kwargs).execute()
+                    temp_token = {
+                        '_id': results['nextPageToken'],
+                        'type': 'video_comments',
+                        "retrieval date": datetime.utcnow(),
+                        'query': kwargs
+                    }
                     index += 1
                 except HttpError as e:
                     print("HTTP error: " + str(e))
@@ -490,19 +494,19 @@ class YoutubeAPI:
 
             if 'nextPageToken' in results:
                 kwargs['pageToken'] = results['nextPageToken']
-                temp_token = {
-                    '_id': results['nextPageToken'],
-                    'keyword': kwargs['q'],
-                    'type': 'search',
-                    "retrieval date": datetime.utcnow(),
-                    'query': kwargs
-                }
                 try:
                     results = self.__service.search().list(**kwargs).execute()
+                    temp_token = {
+                        '_id': results['nextPageToken'],
+                        'keyword': kwargs['q'],
+                        'type': 'search',
+                        "retrieval date": datetime.utcnow(),
+                        'query': kwargs
+                    }
                     index += 1
                 except HttpError as e:
                     print("HTTP error: " + str(e))
-                    return
+                    return False
             else:
                 break
 
