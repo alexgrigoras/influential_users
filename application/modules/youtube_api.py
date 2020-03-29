@@ -6,6 +6,7 @@ import httplib2
 from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
 from application.modules.mongodb import MongoDB
 
 load_dotenv()
@@ -83,7 +84,7 @@ class YoutubeAPI:
                                                                          locationRadius=location_radius)
             else:
                 print("Invalid search parameters")
-                return
+                return False
 
             self.search_results.append({
                 '_id': etag,
@@ -219,6 +220,7 @@ class YoutubeAPI:
                     results = self.__service.channels().list(**kwargs).execute()
                 except HttpError as e:
                     print("HTTP error: " + str(e))
+                    return False
             else:
                 break
 
@@ -236,7 +238,6 @@ class YoutubeAPI:
         except HttpError as e:
             print("HTTP error: " + str(e))
             return False
-        """
         while results:
             for item in results['items']:
                 playlists = {
@@ -258,15 +259,14 @@ class YoutubeAPI:
                     results = self.__service.playlists().list(**kwargs).execute()
                 except HttpError as e:
                     print("HTTP error: " + str(e))
+                    return False
             else:
                 break
 
         if temp_token:
             self.__db.insert_token(temp_token)
-            
-        """
 
-        return results # final_results
+        return final_results
 
     def get_playlist_videos(self, **kwargs):
         final_results = []
@@ -301,6 +301,7 @@ class YoutubeAPI:
                     results = self.__service.playlistItems().list(**kwargs).execute()
                 except HttpError as e:
                     print("HTTP error: " + str(e))
+                    return False
             else:
                 break
 
@@ -344,6 +345,7 @@ class YoutubeAPI:
                     results = self.__service.videos().list(**kwargs).execute()
                 except HttpError as e:
                     print("HTTP error: " + str(e))
+                    return False
             else:
                 break
 
@@ -402,6 +404,7 @@ class YoutubeAPI:
                     index += 1
                 except HttpError as e:
                     print("HTTP error: " + str(e))
+                    return False
             else:
                 break
 
@@ -410,7 +413,7 @@ class YoutubeAPI:
 
         return final_results
 
-    def process_tokens(self, nr_results, content_type=None, location_radius=None, order=None):
+    def process_tokens(self, nr_results, content_type=None, location_radius=None, order="relevance"):
         self.__max_results = 50
 
         tokens = self.__db.get_tokens()
@@ -424,9 +427,12 @@ class YoutubeAPI:
                 args['pageToken'] = token_id
                 result_success = False
 
+                print(" > " + token_type + " token [" + token_id + "]")
+
                 if token_type == "search":
-                    print("search")
                     keyword = t['keyword']
+                    if 'order' in t['query']:
+                        order = t['query']['order']
                     if 'q' in t['query']:
                         result_success = self.search(keyword, nr_results, location_radius=location_radius, order=order,
                                                      search_type='keyword', page_token=token_id,
@@ -454,8 +460,6 @@ class YoutubeAPI:
                 else:
                     pass
 
-                print(" > " + token_type + " token [" + token_id + "]")
-
                 if result_success is not False:
                     print(" > Removing token [" + token_id + "]")
                     self.__db.remove_token(token_id)
@@ -475,6 +479,7 @@ class YoutubeAPI:
             results = self.__service.search().list(**kwargs).execute()
         except HttpError as e:
             print("HTTP error: " + str(e))
+            return
 
         if results:
             etag = results['etag']
@@ -497,6 +502,7 @@ class YoutubeAPI:
                     index += 1
                 except HttpError as e:
                     print("HTTP error: " + str(e))
+                    return
             else:
                 break
 
