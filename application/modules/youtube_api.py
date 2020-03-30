@@ -1,5 +1,8 @@
 import math
 import os
+import pickle
+import random
+import string
 from datetime import datetime
 
 import httplib2
@@ -182,14 +185,16 @@ class YoutubeAPI:
                     videoId=video_id,
                     textFormat='plainText',
                     maxResults=100,
-                    order='time'
+                    order='relevance'
                 )
 
-        videos_id_str = ','.join(videos_list)
-        self.get_video_statistics(part='statistics', id=videos_id_str, maxResults=self.__max_results)
+        if videos_list:
+            videos_id_str = ','.join(videos_list)
+            self.get_video_statistics(part='statistics', id=videos_id_str, maxResults=self.__max_results)
 
-        channels_id_str = ','.join(channels_list)
-        self.get_channel_statistics(part='statistics', id=channels_id_str, maxResults=50)
+        if channels_list:
+            channels_id_str = ','.join(channels_list)
+            self.get_channel_statistics(part='statistics', id=channels_id_str, maxResults=50)
 
     def get_channel_statistics(self, **kwargs):
         temp_token = {}
@@ -417,6 +422,135 @@ class YoutubeAPI:
 
         return final_results
 
+    def create_users_edge_list(self, search_id):
+        videos_list = []
+        channels_list = []
+        channel_names = dict()
+        missing_channels = []
+
+        file_name = self.__random_string(10)
+        path = "data/network_" + file_name
+        while os.path.exists(path + ".*"):
+            file_name = self.__random_string(10)
+            path = "data/network_" + file_name
+        print("File name: network_" + file_name)
+        f = open(path + ".txt", "a+")
+
+        # getting videos list from search
+        search_query = {
+            '_id': search_id
+        }
+        search_limit = {
+            'results': 1
+        }
+        results = self.__db.get_search_results(search_query, search_limit)
+        if results:
+            res = results.next()
+            for vid in res['results']:
+                if vid["id"]["kind"] == "youtube#video":
+                    videos_list.append(vid["id"]["videoId"])
+                    channels_list.append(vid["snippet"]["channelId"])
+        else:
+            print("No results")
+            return False
+
+        # checking if channel id from videos exist
+        for ch in channels_list:
+            channel_query = {
+                '_id': ch
+            }
+            search_limit = {
+                'title': 1
+            }
+
+            channel_result = self.__db.get_channel(channel_query, search_limit)
+            if channel_result is None:
+                missing_channels.append(ch)
+            else:
+                channel_names[ch] = channel_result.next()["title"]
+
+        # get channels list
+        if missing_channels:
+            print("Getting channel details from Youtube Api")
+            channels_id_str = ','.join(missing_channels)
+            self.get_user_channel(part='snippet,statistics', id=channels_id_str, maxResults=50)
+
+        # getting users from comments
+        comment_limit = {
+            "_id": 0,
+            'authorName': 1,
+            'authorId': 1,
+            'replies': 1
+        }
+        for vid in videos_list:
+            comment_query = {
+                'videoId': vid
+            }
+
+            comments = self.__db.get_comments(comment_query, comment_limit)
+            if comments:
+                for com in comments:
+                    f.write(vid + " " + com["authorId"] + "\n")
+                    channel_names[com["authorId"]]=com["authorName"]
+                    if "replies" in com:
+                        for rep in com['replies']:
+                            f.write(vid + " " + rep["authorId"] + "\n")
+                            f.write(com["authorId"] + " " + rep["authorId"] + "\n")
+                            channel_names[rep["authorId"]] = rep["authorName"]
+
+        pickle.dump(channel_names, open(path + ".pickle", "wb"))
+
+        f.close()
+
+        return path
+
+    def get_user_channel(self, **kwargs):
+        temp_token = {}
+
+        try:
+            results = self.__service.channels().list(**kwargs).execute()
+        except HttpError as e:
+            print("HTTP error: " + str(e))
+            return False
+        while results:
+            for item in results['items']:
+                self.__db.insert_channel({
+                    "_id": item['id'],
+                    "title": item['snippet']['title'],
+                    "description": item['snippet']['description'],
+                    "publishedAt": item['snippet']['publishedAt'],
+                    "retrieval date": datetime.utcnow(),
+                    "statistics": {
+                        'viewCount': item['statistics']['viewCount'] if 'viewCount' in item['statistics'] else 0,
+                        'subscriberCount': item['statistics']['subscriberCount'] if 'subscriberCount' in item[
+                            'statistics'] else 0,
+                        'videoCount': item['statistics']['videoCount'] if 'videoCount' in item['statistics'] else 0,
+                        'commentCount': item['statistics']['commentCount'] if 'commentCount' in item[
+                            'statistics'] else 0
+                    }
+                })
+
+            if 'nextPageToken' in results:
+                kwargs['pageToken'] = results['nextPageToken']
+                try:
+                    results = self.__service.channels().list(**kwargs).execute()
+                    temp_token = {
+                        '_id': results['nextPageToken'],
+                        'type': 'channel',
+                        "retrieval date": datetime.utcnow(),
+                        'query': kwargs
+                    }
+                except HttpError as e:
+                    print("HTTP error: " + str(e))
+                    return False
+            else:
+                break
+
+        if temp_token:
+            self.__db.insert_token(temp_token)
+
+        return True
+
     def process_tokens(self, nr_results, content_type=None, location_radius=None, order="relevance"):
         self.__max_results = 50
 
@@ -487,6 +621,7 @@ class YoutubeAPI:
 
         if results:
             etag = results['etag']
+            etag = etag.replace("\"", "")
             total_results = results['pageInfo']['totalResults']
 
         while results and index < nr_pages:
@@ -531,3 +666,10 @@ class YoutubeAPI:
 
     def __write_cache(self):
         self.__db.insert_search_results(self.search_results)
+
+    @staticmethod
+    def __random_string(string_length):
+        """Generate a random string with the combination of lowercase and uppercase letters """
+
+        letters = string.ascii_letters
+        return ''.join(random.choice(letters) for i in range(string_length))
