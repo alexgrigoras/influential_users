@@ -467,13 +467,34 @@ class YoutubeAPI:
             if channel_result is None:
                 missing_channels.append(ch)
             else:
-                channel_names[ch] = channel_result.next()["title"]
+                title = channel_result.next()["title"]
+                channel_names[ch] = title
+                f.write(ch + "," + title + "\n")
 
         # get channels list
         if missing_channels:
             print("Getting channel details from Youtube Api")
             channels_id_str = ','.join(missing_channels)
-            self.get_user_channel(part='snippet,statistics', id=channels_id_str, maxResults=50)
+            result_validation = self.get_user_channel(part='snippet,statistics', id=channels_id_str, maxResults=50)
+
+            if result_validation is True:
+                # checking if channel id from videos exist
+                for ch in channels_list:
+                    channel_query = {
+                        '_id': ch
+                    }
+                    search_limit = {
+                        'title': 1
+                    }
+
+                    channel_result = self.__db.get_channel(channel_query, search_limit)
+                    if channel_result is None:
+                        print("Channels is missing: " + ch)
+                        return
+                    else:
+                        title = channel_result.next()["title"]
+                        channel_names[ch] = title
+                        f.write(ch + "," + title + "\n")
 
         # getting users from comments
         comment_limit = {
@@ -490,12 +511,12 @@ class YoutubeAPI:
             comments = self.__db.get_comments(comment_query, comment_limit)
             if comments:
                 for com in comments:
-                    f.write(vid + " " + com["authorId"] + "\n")
+                    f.write(vid + "," + com["authorId"] + "\n")
                     channel_names[com["authorId"]]=com["authorName"]
                     if "replies" in com:
                         for rep in com['replies']:
-                            f.write(vid + " " + rep["authorId"] + "\n")
-                            f.write(com["authorId"] + " " + rep["authorId"] + "\n")
+                            f.write(vid + "," + rep["authorId"] + "\n")
+                            f.write(com["authorId"] + "," + rep["authorId"] + "\n")
                             channel_names[rep["authorId"]] = rep["authorName"]
 
         pickle.dump(channel_names, open(path + ".pickle", "wb"))
