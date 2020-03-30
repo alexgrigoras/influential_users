@@ -2,6 +2,7 @@ import pickle
 
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib
 
 
 class NetworkAnalysis:
@@ -12,10 +13,12 @@ class NetworkAnalysis:
         return nx.info(self.graph)
 
     def create_network(self, file_path):
-        self.graph = nx.read_edgelist(file_path + ".txt", create_using=nx.DiGraph(), edgetype=str)
+        self.graph = nx.read_edgelist(file_path + ".txt", create_using=nx.DiGraph(), edgetype=str, delimiter=",")
 
         plt.figure(figsize=(20, 20))
         plt.axis('off')
+
+        labels = pickle.load(open(file_path + ".pickle", "rb"))
 
         print(self.__get_graph_info())
 
@@ -25,9 +28,8 @@ class NetworkAnalysis:
         node_color = [20000.0 * self.graph.degree(v) for v in self.graph]
         node_size = [v * 10000 for v in pr.values()]
 
-        labels = pickle.load(open(file_path + ".pickle", "rb" ))
-
-        nx.draw_networkx(self.graph, pos=pos, with_labels=True, node_color=node_color, node_size=node_size)
+        nx.draw_networkx(self.graph, pos=pos, with_labels=True, node_color=node_color, node_size=node_size,
+                         labels=labels)
 
         var = sorted(pr, key=pr.get, reverse=True)[:5]
         print("PageRank:")
