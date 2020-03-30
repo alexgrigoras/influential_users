@@ -21,9 +21,9 @@ class MongoDB:
         self.__comments_col = self.__db[COMMENTS_COLLECTION]
         self.__tokens_col = self.__db[TOKENS_COLLECTION]
 
-    def insert_search_results(self, data):
+    def insert_search_results(self, query):
         try:
-            self.__search_results_col.insert_many(data)
+            self.__search_results_col.insert_many(query)
         except errors.DuplicateKeyError:
             # print("Duplicate key")
             pass
@@ -31,9 +31,9 @@ class MongoDB:
             # print("Bulk write error")
             pass
 
-    def get_search_results(self, query):
+    def get_search_results(self, query, limit=None):
         if self.__search_results_col.count_documents(query) > 0:
-            return self.__search_results_col.find(query)
+            return self.__search_results_col.find(query, limit)
         else:
             return None
 
@@ -59,6 +59,12 @@ class MongoDB:
         except errors.BulkWriteError:
             # print("Bulk write error")
             pass
+
+    def get_channel(self, query, limit=None):
+        if self.__channels_col.count_documents(query) > 0:
+            return self.__channels_col.find(query, limit)
+        else:
+            return None
 
     def insert_video(self, data):
         try:
@@ -105,6 +111,12 @@ class MongoDB:
         except errors.BulkWriteError:
             # print("Bulk write error")
             pass
+
+    def get_comments(self, query, limit=None):
+        if self.__comments_col.count_documents(query) > 0:
+            return self.__comments_col.find(query, limit)
+        else:
+            return None
 
     def insert_token(self, data):
         try:
