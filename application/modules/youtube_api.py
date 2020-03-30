@@ -427,6 +427,7 @@ class YoutubeAPI:
         channels_list = []
         channel_names = dict()
         missing_channels = []
+        video_channel = dict()
 
         file_name = self.__random_string(10)
         path = "data/network_" + file_name
@@ -450,6 +451,7 @@ class YoutubeAPI:
                 if vid["id"]["kind"] == "youtube#video":
                     videos_list.append(vid["id"]["videoId"])
                     channels_list.append(vid["snippet"]["channelId"])
+                    video_channel[vid["id"]["videoId"]] = vid["snippet"]["channelId"]
         else:
             print("No results")
             return False
@@ -469,7 +471,6 @@ class YoutubeAPI:
             else:
                 title = channel_result.next()["title"]
                 channel_names[ch] = title
-                f.write(ch + "," + title + "\n")
 
         # get channels list
         if missing_channels:
@@ -494,7 +495,6 @@ class YoutubeAPI:
                     else:
                         title = channel_result.next()["title"]
                         channel_names[ch] = title
-                        f.write(ch + "," + title + "\n")
 
         # getting users from comments
         comment_limit = {
@@ -507,17 +507,20 @@ class YoutubeAPI:
             comment_query = {
                 'videoId': vid
             }
+            ch_id = video_channel[vid]
 
             comments = self.__db.get_comments(comment_query, comment_limit)
             if comments:
                 for com in comments:
-                    f.write(vid + "," + com["authorId"] + "\n")
+                    f.write(ch_id + "," + com["authorId"] + "\n")
                     channel_names[com["authorId"]]=com["authorName"]
                     if "replies" in com:
                         for rep in com['replies']:
-                            f.write(vid + "," + rep["authorId"] + "\n")
+                            #f.write(ch_id + "," + rep["authorId"] + "\n")
                             f.write(com["authorId"] + "," + rep["authorId"] + "\n")
                             channel_names[rep["authorId"]] = rep["authorName"]
+            else:
+                channel_names.pop(ch_id)
 
         pickle.dump(channel_names, open(path + ".pickle", "wb"))
 
