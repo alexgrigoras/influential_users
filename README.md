@@ -13,17 +13,18 @@ Case Studies, 1259-1267</i>
 The main components of the application are
 
 1. <b>Information Gathering</b> - YouTube
-    
+
 1. <b>Data Storage</b> - MongoDB
-	
+
 1. <b>Analysis</b>
     1. ranking algorithms
     1. sentiment detection
-		
+
 ## Application structure
 ```
 influential_users
 ├── youtube_sentiment_analysis
+|   ├── data
 |   ├── modules
 |   |   ├── __init__.py
 |   |   ├── crawler.py
