@@ -11,7 +11,13 @@ TOKENS_COLLECTION = "tokens"
 
 class MongoDB:
     def __init__(self):
-        self.__mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
+        try:
+            self.__mongo_client = pymongo.MongoClient("mongodb://localhost:27017/")
+            self.__mongo_client.server_info()  # will throw an exception
+        except errors.ConnectionFailure as e:
+            print("Error on MongoDB database: " + str(e))
+            print("Exiting")
+            exit(1)
 
         self.__db = self.__mongo_client[DATABASE_NAME]
 
