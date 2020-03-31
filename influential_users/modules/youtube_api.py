@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from application.modules.mongodb import MongoDB
+from influential_users.modules.mongodb import MongoDB
 
 load_dotenv()
 DEVELOPER_KEY = os.getenv('GOOGLE_DEV_KEY')
@@ -74,7 +74,7 @@ class YoutubeAPI:
         self.search_results = self.__check_cache(search_query)
 
         if not self.search_results:
-            print("Requesting data from youtube api")
+            print("Requesting .networks from youtube api")
 
             if search_type is 'keyword':
                 results, etag, total_results = self.__get_search_results(nr_pages, q=keyword, part='id,snippet',
@@ -430,10 +430,10 @@ class YoutubeAPI:
         video_channel = dict()
 
         file_name = self.__random_string(10)
-        path = "data/network_" + file_name
+        path = ".networks/network_" + file_name
         while os.path.exists(path + ".*"):
             file_name = self.__random_string(10)
-            path = "data/network_" + file_name
+            path = ".networks/network_" + file_name
         print("File name: network_" + file_name)
         f = open(path + ".txt", "a+")
 
