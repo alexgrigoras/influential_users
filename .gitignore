@@ -133,6 +133,7 @@ dmypy.json
 /.idea/modules.xml
 /.idea/misc.xml
 /.idea/vcs.xml
-/application/modules/client_secret.json
-/application/data/comments.csv
-/application/.cache/
+/influential_users/modules/client_secret.json
+/influential_users/.networks/comments.csv
+/influential_users/.cache/
+/influential_users/.networks/
