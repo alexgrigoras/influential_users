@@ -6,6 +6,7 @@ from influential_users.modules.message_logger import MessageLogger
 DATABASE_NAME = "influential_users"
 SEARCH_RESULTS_COLLECTION = "search_results"
 CHANNELS_COLLECTION = "channels"
+PLAYLISTS_COLLECTION = "playlists"
 VIDEOS_COLLECTION = "videos"
 COMMENTS_COLLECTION = "comments"
 TOKENS_COLLECTION = "tokens"
@@ -16,7 +17,7 @@ class MongoDB:
 
     """
 
-    """ Init Methods """
+    """ Init """
 
     def __init__(self):
         """
@@ -37,6 +38,7 @@ class MongoDB:
         self.__db = self.__mongo_client[DATABASE_NAME]  # database: DATABASE_NAME
         self.__search_results_col = self.__db[SEARCH_RESULTS_COLLECTION]  # collection: SEARCH_RESULTS_COLLECTION
         self.__channels_col = self.__db[CHANNELS_COLLECTION]  # collection: CHANNELS_COLLECTION
+        self.__playlists_col = self.__db[PLAYLISTS_COLLECTION]  # collection: PLAYLISTS_COLLECTION
         self.__videos_col = self.__db[VIDEOS_COLLECTION]  # collection: VIDEOS_COLLECTION
         self.__comments_col = self.__db[COMMENTS_COLLECTION]  # collection: COMMENTS_COLLECTION
         self.__tokens_col = self.__db[TOKENS_COLLECTION]  # collection: TOKENS_COLLECTION
@@ -111,6 +113,21 @@ class MongoDB:
             return self.__channels_col.find(query, limit)
         else:
             return None
+
+    """ Playlists """
+
+    def insert_playlist(self, data):
+        """
+
+        :param data:
+        :return:
+        """
+        try:
+            self.__playlists_col.insert_one(data)
+        except errors.DuplicateKeyError as e:
+            self.logger.info("Duplicate key: " + str(e))
+        except errors.BulkWriteError as e:
+            self.logger.error("Bulk write error: " + str(e))
 
     """ Videos """
 
