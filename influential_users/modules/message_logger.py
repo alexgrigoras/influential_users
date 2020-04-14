@@ -11,7 +11,6 @@ class MessageLogger:
         Class constructor - creates a message logger for the module
         :param module_name: the name of the module
         """
-
         self.logger = logging.getLogger(module_name)
         self.logger.setLevel(logging.DEBUG)
         console_handler = logging.StreamHandler()
@@ -25,5 +24,4 @@ class MessageLogger:
         Return the logger object that can be used for logging messages
         :return: logging object
         """
-
         return self.logger
