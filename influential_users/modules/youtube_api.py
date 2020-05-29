@@ -23,6 +23,8 @@ NETWORKS_FOLDER = '.networks'
 TEXT_EXTENSION = '.txt'
 OBJECT_EXTENSION = '.pickle'
 
+COMMENT_PAGES_LIMIT = 3
+
 
 class YoutubeAPI:
     """
@@ -103,7 +105,7 @@ class YoutubeAPI:
         search_results = self.__check_search_cache(search_query)
 
         if not search_results:
-            print("Requesting .networks from youtube api")
+            print("Requesting data from youtube api")
 
             if search_type is 'keyword':
                 results, etag, total_results = self.__get_search_results(nr_pages, q=keyword, part='id,snippet',
@@ -283,7 +285,11 @@ class YoutubeAPI:
                     result_success = self.__get_channel_statistics(**args)
 
                 elif token_type == 'channel_playlists':
-                    result_success = self.__get_channel_playlists(**args)
+                    playlists = self.__get_channel_playlists(**args)
+                    if playlists is False:
+                        return
+                    for pl in playlists:
+                        self.__db.insert_playlist(pl)
 
                 elif token_type == 'playlist_videos':
                     result_success = self.__get_playlist_videos(**args)
@@ -443,7 +449,7 @@ class YoutubeAPI:
             results = self.__service.search().list(**kwargs).execute()
         except HttpError as e:
             print("HTTP error: " + str(e))
-            return
+            return False, False, False
 
         if results:
             etag = results['etag']
@@ -468,7 +474,7 @@ class YoutubeAPI:
                     index += 1
                 except HttpError as e:
                     print("HTTP error: " + str(e))
-                    return False
+                    return False, False, False
             else:
                 break
 
@@ -738,7 +744,7 @@ class YoutubeAPI:
 
         final_results = []
         temp_token = {}
-        nr_pages = 50
+        nr_pages = COMMENT_PAGES_LIMIT
         index = 0
 
         try:
