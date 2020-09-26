@@ -1,7 +1,7 @@
 import pymongo
 from pymongo import errors
 
-from influential_users.modules.message_logger import MessageLogger
+from influential_users.application.message_logger import MessageLogger
 
 DATABASE_NAME = "influential_users"
 SEARCH_RESULTS_COLLECTION = "search_results"

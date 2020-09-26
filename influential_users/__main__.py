@@ -1,8 +1,9 @@
+import pickle
 import time
 
-from influential_users.modules.message_logger import MessageLogger
-from influential_users.modules.network_analysis import NetworkAnalysis
-from influential_users.modules.youtube_api import YoutubeAPI
+from influential_users.application.message_logger import MessageLogger
+from influential_users.application.network_analysis import NetworkAnalysis
+from influential_users.application.youtube_api import YoutubeAPI
 import dash
 import dash_core_components as dcc
 import dash_html_components as html

@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from influential_users.modules.message_logger import MessageLogger
-from influential_users.modules.mongodb import MongoDB
+from influential_users.application.message_logger import MessageLogger
+from influential_users.application.mongodb import MongoDB
 
 load_dotenv()
 DEVELOPER_KEY = os.getenv('GOOGLE_DEV_KEY')

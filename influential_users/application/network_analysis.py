@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from networkx.drawing.nx_agraph import graphviz_layout
 
-from influential_users.modules.message_logger import MessageLogger
-from influential_users.modules.plotly_display import visualize_graph_3d, visualize_graph
+from influential_users.application.message_logger import MessageLogger
+from influential_users.application.plotly_display import visualize_graph_3d, visualize_graph
 
 NETWORKS_FOLDER = '.networks'
 IMAGES_FOLDER = '.images'
